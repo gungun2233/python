@@ -1,21 +1,34 @@
-from transformers import pipeline
-import streamlit as st
+import torch
+from transformers import BartTokenizer, BartForConditionalGeneration
 
-@st.cache_resource
-def load_text_generation_model():
-    return pipeline("text-generation", model="gpt2", framework="pt")  # Force PyTorch
+# Load the BART model and tokenizer
+tokenizer = BartTokenizer.from_pretrained("facebook/bart-large-cnn")
+model = BartForConditionalGeneration.from_pretrained("facebook/bart-large-cnn")
 
-text_generator = load_text_generation_model()
+def summarize_text(text):
+    # Encode the text
+    inputs = tokenizer.encode("summarize: " + text, return_tensors="pt", max_length=1024, truncation=True)
 
-st.title("Text Generation with GPT-2")
+    # Generate summary
+    summary_ids = model.generate(inputs, max_length=150, min_length=30, length_penalty=2.0, num_beams=4, early_stopping=True)
 
-# Input from user
-input_text = st.text_input("Enter a prompt:")
+    # Decode the summary
+    summary = tokenizer.decode(summary_ids[0], skip_special_tokens=True)
+    return summary
 
-# Generate text when the button is clicked
-if st.button("Generate"):
-    if input_text:
-        generated_text = text_generator(input_text, max_length=100, num_return_sequences=1)
-        st.write(generated_text[0]['generated_text'])
-    else:
-        st.write("Please enter some text to generate.")
+# Example usage
+if __name__ == "__main__":
+    # Sample text to summarize
+    text = """
+    The BART model is a denoising autoencoder for pretraining sequence-to-sequence models. 
+    It can be used for various natural language processing tasks such as text summarization, 
+    machine translation, and text generation. BART combines the strengths of BERT and GPT by 
+    using a bidirectional encoder and an autoregressive decoder. This allows it to learn rich 
+    contextual representations and generate coherent sequences effectively. The model can 
+    be fine-tuned on specific tasks to achieve state-of-the-art performance.
+    """
+
+    # Get the summary
+    summary = summarize_text(text)
+    print("Original Text:\n", text)
+    print("\nSummary:\n", summary)
