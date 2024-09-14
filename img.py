@@ -1,41 +1,45 @@
 import streamlit as st
-from diffusers import StableDiffusionPipeline
 import torch
-from PIL import Image
+from diffusers import FluxPipeline
+from huggingface_hub import login
 
-# Set up the page
-st.title("Text-to-Image Generator using Stable Diffusion")
+# Login with Hugging Face token
+login(token="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")  # Replace with your token
 
-# Load the model (only do this once to avoid reloading)
-@st.cache_resource
-def load_model():
-    model_id = "CompVis/stable-diffusion-v1-4"
-    pipe = StableDiffusionPipeline.from_pretrained(model_id, torch_dtype=torch.float16)
-    pipe = pipe.to("cuda")  # Use GPU if available
-    return pipe
+# Title of the app
+st.title("Generate AI Art using FluxPipeline")
 
-# Get the prompt from the user
-prompt = st.text_input("Enter a text prompt:", "A futuristic city skyline during sunset")
+# Model setup
+st.write("Setting up the model...")
+pipe = FluxPipeline.from_pretrained("black-forest-labs/FLUX.1-dev", torch_dtype=torch.bfloat16)
+pipe.enable_model_cpu_offload()  # save VRAM by offloading the model to CPU if needed
+
+# Input prompt from the user
+prompt = st.text_input("Enter a prompt:", "A cat holding a sign that says hello world")
+
+# Slider for other configurations
+guidance_scale = st.slider("Guidance Scale:", min_value=1.0, max_value=10.0, value=3.5)
+num_inference_steps = st.slider("Number of Inference Steps:", min_value=1, max_value=100, value=50)
 
 # Generate the image when the button is clicked
 if st.button("Generate Image"):
-    st.write("Generating the image...")
+    st.write("Generating image...")
 
-    # Load model
-    pipe = load_model()
+    # Generate the image
+    image = pipe(
+        prompt,
+        height=1024,
+        width=1024,
+        guidance_scale=guidance_scale,
+        num_inference_steps=num_inference_steps,
+        max_sequence_length=512,
+        generator=torch.Generator("cpu").manual_seed(0)
+    ).images[0]
 
-    # Generate image
-    image = pipe(prompt).images[0]
-
-    # Display the generated image
+    # Save and display the image
+    image.save("flux-dev.png")
     st.image(image, caption="Generated Image", use_column_width=True)
 
-    # Option to download the image
-    image.save("generated_image.png")
-    with open("generated_image.png", "rb") as file:
-        btn = st.download_button(
-            label="Download Image",
-            data=file,
-            file_name="generated_image.png",
-            mime="image/png"
-        )
+# Download button
+with open("flux-dev.png", "rb") as file:
+    btn = st.download_button(label="Download Image", data=file, file_name="flux-dev.png", mime="image/png")
