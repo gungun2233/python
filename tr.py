@@ -1,191 +1,177 @@
-import streamlit as st
-from deep_translator import GoogleTranslator
-from gtts import gTTS
-import os
-from langdetect import detect
+from flask import Flask, render_template_string, request, jsonify
+import speech_recognition as sr
+from googletrans import Translator
 
-# Mapping language codes to full names
-language_map = {
-    'en': 'English',
-    'fr': 'French',
-    'es': 'Spanish',
-    'de': 'German',
-    'hi': 'Hindi',
-    'zh': 'Chinese',
-    'ar': 'Arabic',
-    'it': 'Italian',
-    'pt': 'Portuguese',
-    'ru': 'Russian',
-    'ja': 'Japanese',
-    'ko': 'Korean',
-    'tr': 'Turkish',
-    'nl': 'Dutch',
-    'sv': 'Swedish',
-    'pl': 'Polish',
-    'no': 'Norwegian',
-    'da': 'Danish',
-    'fi': 'Finnish',
-    'cs': 'Czech',
-    'el': 'Greek',
-    'ro': 'Romanian'
-}
+app = Flask(__name__)
 
-# Custom CSS for styling
-st.markdown("""
+HTML_TEMPLATE = """
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Speech Translation App</title>
     <style>
-    body {
-        background-color: #f0f2f6;
-    }
-    .full-width-element {
-        width: 100vw;
-        position: relative;
-        left: 50%;
-        right: 50%;
-        margin-left: -50vw;
-        margin-right: -50vw;
-    }
-    .full-width-title {
-        font-weight: bold;
-        font-size: 48px;
-        color: white;
-        text-align: center;
-        padding: 30px 0;
-        background: linear-gradient(90deg, #1d2671, #c33764);
-        border-radius: 15px;
-        margin: 0;
-    }
-    .input-area, .output-area {
-        padding: 20px;
-        background-color: #ffffff;
-        border-radius: 10px;
-        box-shadow: 0px 4px 12px rgba(0, 0, 0, 0.1);
-        margin-bottom: 20px;
-        width: 100%;
-    }
-    .stTextArea>div>div>textarea {
-        width: 100%;
-        border-radius: 10px;
-        padding: 10px;
-    }
-    .stButton>button {
-        background-color: #007bff;
-        color: white;
-        font-size: 18px;
-        padding: 10px 24px;
-        border-radius: 8px;
-        border: none;
-        margin-top: 20px;
-        transition: 0.3s;
-        width: auto;
-        display: inline-block;
-    }
-    .stButton>button:hover {
-        background-color: #0056b3;
-    }
-    .stSelectbox, .stMultiselect {
-        margin-top: 15px;
-        font-size: 16px;
-    }
-    .button-container {
-        display: flex;
-        justify-content: space-around;
-        margin-top: 20px;
-    }
-    .key-features {
-        color: #1d2671;
-        font-size: 32px;
-        font-weight: bold;
-        text-align: center;
-        margin-bottom: 20px;
-    }
-    .feature-item {
-        color: #007bff;
-        font-size: 20px;
-        font-weight: bold;
-        padding: 10px 0;
-    }
-    .feature-description {
-        color: #333;
-        font-size: 16px;
-        padding: 5px 0;
-        margin-left: 10px;
-    }
+        body { font-family: Arial, sans-serif; background-color: #e7f1ff; margin: 0; padding: 0; display: flex; flex-direction: column; align-items: center; }
+        .title { text-align: center; background-color: #ff0000; padding: 20px; border-radius: 10px; color: #FFD700; font-size: 48px; font-weight: bold; margin-top: 20px; width: 80%; border: 5px solid #ff0000; }
+        .subtitle { text-align: center; color: #ffcc00; font-size: 36px; font-weight: bold; margin: 10px 0; text-shadow: 1px 1px 2px #000; }
+        .container { background-color: #d0e7ff; padding: 20px; border-radius: 10px; width: 80%; max-width: 800px; box-shadow: 0 0 10px rgba(0,0,0,0.1); margin-top: 20px; display: flex; justify-content: space-between; }
+        .user { flex: 1; margin: 10px; background-color: #7b68ee; padding: 15px; border-radius: 10px; min-width: 300px; max-width: 400px; }
+        h3 { color: #ffcc00; font-size: 28px; text-align: center; text-shadow: 1px 1px 2px #000; }
+        select, button, textarea { width: 100%; padding: 10px; margin: 10px 0; border-radius: 5px; border: 1px solid #ccc; font-size: 16px; box-sizing: border-box; }
+        button { background-color: #FFD700; color: #000; cursor: pointer; transition: background-color 0.3s; border: none; }
+        button:hover { background-color: #FFC300; }
+        .output-box { background-color: #f9f9f9; padding: 15px; border-radius: 5px; border: 1px solid #ccc; margin-top: 20px; word-wrap: break-word; }
+        #status { color: #333; margin-top: 10px; font-weight: bold; }
     </style>
-    """, unsafe_allow_html=True)
+</head>
+<body>
+    <div class="title">ARMY PUBLIC SCHOOL AGRA</div>
+    <div class="subtitle">🌍 Language Translator 🌍</div>
+    <div class="container">
+        <div class="user">
+            <h3>User 1</h3>
+            <select id="source_language_1">{% for language, code in languages.items() %}<option value="{{ code }}">{{ language }}</option>{% endfor %}</select>
+            <select id="target_language_1">{% for language, code in languages.items() %}<option value="{{ code }}">{{ language }}</option>{% endfor %}</select>
+            <textarea id="input_text_1" rows="4" placeholder="Enter text or click 'Start Listening' to speak"></textarea>
+            <div>
+                <button onclick="startListening(1)">Start Listening 🎤</button>
+                <button onclick="translateText(1)">Translate</button>
+            </div>
+            <div id="status_1"></div>
+            <div id="transcription_1" class="output-box" style="display: none;"></div>
+            <div id="translation_1" class="output-box" style="display: none;"></div>
+            <button onclick="speakTranslation(1)" id="speak_button_1" style="display: none;">🔊 Speak Translation</button>
+        </div>
+        <div class="user">
+            <h3>User 2</h3>
+            <select id="source_language_2">{% for language, code in languages.items() %}<option value="{{ code }}">{{ language }}</option>{% endfor %}</select>
+            <select id="target_language_2">{% for language, code in languages.items() %}<option value="{{ code }}">{{ language }}</option>{% endfor %}</select>
+            <textarea id="input_text_2" rows="4" placeholder="Enter text or click 'Start Listening' to speak"></textarea>
+            <div>
+                <button onclick="startListening(2)">Start Listening 🎤</button>
+                <button onclick="translateText(2)">Translate</button>
+            </div>
+            <div id="status_2"></div>
+            <div id="transcription_2" class="output-box" style="display: none;"></div>
+            <div id="translation_2" class="output-box" style="display: none;"></div>
+            <button onclick="speakTranslation(2)" id="speak_button_2" style="display: none;">🔊 Speak Translation</button>
+        </div>
+    </div>
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    <script>
+        function startListening(user) {
+            $('#status_' + user).text('Listening... Please speak.');
+            $.ajax({
+                url: '/listen',
+                type: 'POST',
+                data: {
+                    source_language: $('#source_language_' + user).val(),
+                    user: user
+                },
+                success: function(response) {
+                    $('#status_' + user).text('');
+                    if (response.error) {
+                        alert(response.error);
+                    } else {
+                        $('#input_text_' + user).val(response.transcription);
+                    }
+                },
+                error: function() {
+                    $('#status_' + user).text('');
+                    alert('An error occurred while processing your request.');
+                }
+            });
+        }
 
-# Full-width title with gradient, bold text, and emoji
-st.markdown('<div class="full-width-element"><div class="full-width-title"> Army Public School Agra - Language Translator 🌐 </div></div>', unsafe_allow_html=True)
+        function translateText(user) {
+            $('#status_' + user).text('Translating...');
+            $.ajax({
+                url: '/translate',
+                type: 'POST',
+                data: {
+                    source_language: $('#source_language_' + user).val(),
+                    target_language: $('#target_language_' + user).val(),
+                    text: $('#input_text_' + user).val()
+                },
+                success: function(response) {
+                    $('#status_' + user).text('');
+                    if (response.error) {
+                        alert(response.error);
+                    } else {
+                        $('#transcription_' + user).text('Original: ' + response.original).show();
+                        $('#translation_' + user).text('Translation: ' + response.translation).show();
+                        $('#speak_button_' + user).show();
+                    }
+                },
+                error: function() {
+                    $('#status_' + user).text('');
+                    alert('An error occurred while processing your request.');
+                }
+            });
+        }
 
-# Input area for text
-st.markdown('<div class="full-width-element"><div class="input-area">', unsafe_allow_html=True)
-text_input = st.text_area("Enter the text you want to translate:", key="input_text", height=150)
-st.markdown('</div></div>', unsafe_allow_html=True)
+        function speakTranslation(user) {
+            const text = $('#translation_' + user).text().replace('Translation: ', '');
+            const lang = $('#target_language_' + user).val();
+            
+            if ('speechSynthesis' in window) {
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = lang;
+                speechSynthesis.speak(utterance);
+            } else {
+                alert('Text-to-speech is not supported in your browser.');
+            }
+        }
+    </script>
+</body>
+</html>
+"""
 
-# Automatically detect the input language and display
-if text_input:
-    detected_lang = detect(text_input)
-    st.write(f"Detected language: {language_map.get(detected_lang, detected_lang).upper()}")
+@app.route('/')
+def index():
+    languages = {
+        'Hindi': 'hi',
+        'Bengali': 'bn',
+        'Telugu': 'te',
+        'Marathi': 'mr',
+        'Tamil': 'ta',
+        'Gujarati': 'gu',
+        'Punjabi': 'pa',
+        'Malayalam': 'ml',
+        'Urdu': 'ur',
+        'English': 'en',
+        'Spanish': 'es'
+    }
+    return render_template_string(HTML_TEMPLATE, languages=languages)
 
-# Multi-Language Translation Feature with full language names
-selected_langs = st.multiselect(
-    "Select multiple target languages:", 
-    options=list(language_map.keys()), 
-    format_func=lambda x: language_map[x]
-)
+@app.route('/listen', methods=['POST'])
+def listen():
+    source_language = request.form['source_language']
+    user = request.form['user']
+    recognizer = sr.Recognizer()
+    
+    with sr.Microphone() as source:
+        recognizer.adjust_for_ambient_noise(source)
+        audio = recognizer.listen(source)
+        
+        try:
+            transcription = recognizer.recognize_google(audio, language=source_language)
+            return jsonify(transcription=transcription)
+        except sr.UnknownValueError:
+            return jsonify(error="Could not understand audio"), 400
+        except sr.RequestError:
+            return jsonify(error="Could not request results from Google Speech Recognition service"), 400
 
-# Initialize session state for translation storage
-if 'translated_texts' not in st.session_state:
-    st.session_state['translated_texts'] = {}
+@app.route('/translate', methods=['POST'])
+def translate():
+    source_language = request.form['source_language']
+    target_language = request.form['target_language']
+    text = request.form['text']
+    
+    translator = Translator()
+    translation = translator.translate(text, src=source_language, dest=target_language)
+    return jsonify(original=text, translation=translation.text)
 
-# Translation button
-st.markdown('<div class="button-container">', unsafe_allow_html=True)
-if st.button("Translate"):
-    if text_input:
-        st.session_state['translated_texts'].clear()  # Clear previous translations
-        for lang in selected_langs:
-            # Perform translation
-            translated = GoogleTranslator(source='auto', target=lang).translate(text_input)
-            st.session_state['translated_texts'][lang] = translated  # Store all translations in session state
-            st.markdown('<div class="full-width-element"><div class="output-area">', unsafe_allow_html=True)
-            st.subheader(f"Translated Text ({language_map[lang]}):")
-            st.write(translated)
-            st.markdown('</div></div>', unsafe_allow_html=True)
-    else:
-        st.warning("Please enter some text to translate.")
-st.markdown('</div>', unsafe_allow_html=True)
-
-# Text-to-Speech (TTS) Feature
-st.markdown('<div class="full-width-element"><div class="output-area">', unsafe_allow_html=True)
-tts_lang = st.selectbox("Select the language for speech output:", options=list(language_map.keys()), format_func=lambda x: language_map[x])
-
-# Play button is always displayed, but functionality only works after translation
-if st.button("Play Translated Text"):
-    if tts_lang in st.session_state['translated_texts']:
-        # Use the selected translation for TTS
-        tts_text = st.session_state['translated_texts'][tts_lang]
-        tts = gTTS(tts_text, lang=tts_lang)
-        tts.save("translated_speech.mp3")
-        st.audio("translated_speech.mp3")
-    else:
-        st.warning("Please translate the text to this language before playing the audio.")
-st.markdown('</div></div>', unsafe_allow_html=True)
-
-# Key Features Section with Colors
-st.markdown("""
-<div class="key-features">🌟 Key Features of the Translator 🌟</div>
-
-<div class="feature-item">1. **Language Detection**:</div>
-<div class="feature-description">Automatically detects the input language for a smoother translation process.</div>
-
-<div class="feature-item">2. **Multi-Language Translation**:</div>
-<div class="feature-description">Translate text into multiple languages simultaneously with ease.</div>
-
-<div class="feature-item">3. **Text-to-Speech (TTS)**:</div>
-<div class="feature-description">Converts the translated text into speech, making the tool interactive and engaging.</div>
-
-<div class="feature-item">4. **Custom UI Design**:</div>
-<div class="feature-description">Sleek and responsive interface with a gradient title bar and full-width elements for a modern look.</div>
-
-<div class="feature-item">5. **Detects and Shows Language Code**:</div>
-<div class="feature-description">Detects the language of input text and shows the detected language before translation.</div>
-""", unsafe_allow_html=True)
+if __name__ == '__main__':
+    app.run(debug=True)
